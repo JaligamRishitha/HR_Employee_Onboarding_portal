@@ -51,7 +51,7 @@ export function EmployeeLayout() {
 
         {/* Main Content - Full Width */}
         <main className="employee-main">
-          <div className="employee-content-container">
+          <div className="employee-content-container ">
             <Outlet />
           </div>
         </main>

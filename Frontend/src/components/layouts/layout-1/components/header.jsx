@@ -90,18 +90,12 @@ export function Header({ menu }) {
         </div>
 
         {/* Centered Welcome Message */}
-        <div className="hidden lg:flex items-center justify-center flex-1">
-          <h1 className="text-2xl font-semibold text-gray-900 text-center ">
+        <div className="absolute left-1/2 transform -translate-x-1/2 mt-5">
+          <h1 className="text-2xl font-semibold text-gray-900 text-center">
             {`Welcome to ${getPortalLabel(pathname)} `}
           </h1>
         </div>
 
-        {/* Centered Welcome Message (Mobile) */}
-        <div className="flex lg:hidden items-center justify-center flex-1">
-          <h1 className="text-sm font-semibold text-gray-900 text-center">
-            {`Welcome to ${getPortalLabel(pathname)} - ${user?.name || ''}`}
-          </h1>
-        </div>
 
         {/* Mega Menu - Removed as requested, keeping only profile */}
       

@@ -129,7 +129,7 @@ export function UserDropdownMenu({ trigger }) {
 
         <DropdownMenuSeparator />
         <div className="p-2 mt-1">
-          <Button variant="outline" size="sm" className="w-full" onClick={logout}>
+          <Button size="sm" variant="ghost" className="w-full text-white bg-red-500 hover:bg-red-500" onClick={logout}>
             Logout
           </Button>
         </div>

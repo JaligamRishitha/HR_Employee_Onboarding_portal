@@ -1,56 +1,55 @@
-import { useEffect, useState } from 'react';
-import { toast } from 'react-toastify';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { Eye, FileText, Download, X, CheckCircle, Clock, AlertCircle, Send } from 'lucide-react';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import api from '@/lib/api';
-import { CheckCircle, Clock, AlertCircle,FileText  } from 'lucide-react';
 
 const DocumentCollection = () => {
+  const [showDocumentsModal, setShowDocumentsModal] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [employeesData, setEmployeesData] = useState([]);
-  const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [employeeDocuments, setEmployeeDocuments] = useState([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
-  const [requestLogs, setRequestLogs] = useState([]);
-  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [loadingEmployees, setLoadingEmployees] = useState(true);
   const [selectedEmployeeForRequest, setSelectedEmployeeForRequest] = useState(null);
-  const [selectedDocuments, setSelectedDocuments] = useState([]);
-  const [showDocumentsModal, setShowDocumentsModal] = useState(false);
   const [showDocumentRequestModal, setShowDocumentRequestModal] = useState(false);
-  const [isRejectMode, setIsRejectMode] = useState(false);
+  const [requestLogs, setRequestLogs] = useState([]);
+  const [showRequestLogs, setShowRequestLogs] = useState(false);
 
-  // ------------------ API Functions ------------------
+  // Fetch all employees
   const fetchEmployeesData = async () => {
     setLoadingEmployees(true);
     try {
-      const { data } = await api.get('/documents/all-documents');
-
-      const transformedData = data.map(employee => {
-        const uploadedDocs = employee.documents ? employee.documents.length : 0;
+      const { data } = await api.get(`/documents/all-documents`);
+      const transformedData = data.map(emp => {
+        const uploadedDocs = emp.documents?.length || 0;
         return {
-          id: employee.id,
-          name: employee.name,
-          email: employee.email,
+          id: emp.id,
+          name: emp.name,
+          email: emp.email,
           type: 'Employee',
-          role: employee.role || 'Employee',
+          role: emp.role || 'Employee',
           totalDocuments: 16,
           submittedDocuments: uploadedDocs,
-          documents: employee.documents || []
+          documents: emp.documents || []
         };
       });
-
       setEmployeesData(transformedData);
     } catch (error) {
       console.error('Error fetching employees data:', error);
+      toast.error('Failed to fetch employees data.');
       setEmployeesData([]);
-      toast.error('Failed to fetch employees data');
     } finally {
       setLoadingEmployees(false);
     }
   };
 
+  // Fetch employee documents
   const fetchEmployeeDocuments = async (employeeId) => {
     setLoadingDocuments(true);
     try {
       const { data } = await api.get(`/documents/emp/${employeeId}`);
-
       const transformedDocs = data.map(doc => ({
         id: doc.doc_type,
         name: getDocumentDisplayName(doc.doc_type),
@@ -60,71 +59,53 @@ const DocumentCollection = () => {
         status: 'uploaded'
       }));
 
-      const allDocTypes = getAllDocumentTypes();
-      const completeDocList = allDocTypes.map(docType => {
-        const uploadedDoc = transformedDocs.find(doc => doc.id === docType.id);
+      const completeDocList = getAllDocumentTypes().map(docType => {
+        const uploadedDoc = transformedDocs.find(d => d.id === docType.id);
         return uploadedDoc || { ...docType, upload_date: 'N/A', url: null, status: 'not_uploaded' };
       });
 
       setEmployeeDocuments(completeDocList);
     } catch (error) {
       console.error('Error fetching employee documents:', error);
+      toast.error('Failed to fetch documents.');
       setEmployeeDocuments(getEmptyDocumentsList());
-      toast.error('Failed to fetch employee documents');
     } finally {
       setLoadingDocuments(false);
     }
   };
 
+  // Request a document
   const requestDocument = async (employeeId, documentType = 'General Document') => {
     try {
-      const { data: result } = await api.post('/documents/request-doc', {
+      const { data } = await api.post(`/documents/request-doc`, {
         employee_id: employeeId,
         document_type: documentType
       });
 
       const employee = employeesData.find(emp => emp.id === employeeId);
       const newLog = {
-        id: result.id || Date.now(),
+        id: data.id || Date.now(),
         employeeId,
         employeeName: employee?.name || 'Unknown',
         documentType,
-        requestDate: result.requested_at || new Date().toISOString(),
-        status: result.status || 'pending'
+        requestDate: data.requested_at || new Date().toISOString(),
+        status: data.status || 'pending'
       };
 
       setRequestLogs(prev => [newLog, ...prev]);
-      toast.success(result.message || `Document request sent to ${employee?.name || 'employee'}`);
+      toast.success(data.message || `Document request sent to ${employee?.name || 'employee'}`);
     } catch (error) {
       console.error('Error requesting document:', error);
-
-      // Handle 401 separately
-      if (error.response?.status === 401) {
-        const employee = employeesData.find(emp => emp.id === employeeId);
-        const newLog = {
-          id: Date.now(),
-          employeeId,
-          employeeName: employee?.name || 'Unknown',
-          documentType,
-          requestDate: new Date().toISOString(),
-          status: 'pending'
-        };
-        setRequestLogs(prev => [newLog, ...prev]);
-        toast.info(`Document request logged locally for ${employee?.name || 'employee'} (Authentication required)`);
-        return;
-      }
-
-      toast.error('Failed to send document request. Please try again.');
+      toast.error('Failed to send document request.');
     }
   };
 
+  // Fetch request logs
   const fetchRequestLogs = async () => {
     try {
-      const { data: logs } = await api.get('/documents/request-logs');
-
-      const { data: employees } = await api.get('/users/employees');
-      const employeesMap = employees.reduce((map, emp) => {
-        map[emp.employeeId] = emp;
+      const { data: logs } = await api.get(`/documents/request-logs`);
+      const employeesMap = employeesData.reduce((map, emp) => {
+        map[emp.id] = emp;
         return map;
       }, {});
 
@@ -140,11 +121,60 @@ const DocumentCollection = () => {
       setRequestLogs(transformedLogs);
     } catch (error) {
       console.error('Error fetching request logs:', error);
-      toast.error('Failed to fetch document request logs');
+      toast.error('Failed to fetch request logs.');
     }
   };
 
-  // ------------------ Helper Functions ------------------
+  const handleViewDocuments = async (employee) => {
+    setSelectedEmployee(employee);
+    setShowDocumentsModal(true);
+    await fetchEmployeeDocuments(employee.id);
+  };
+
+  const handleCloseModal = () => {
+    setShowDocumentsModal(false);
+    setSelectedEmployee(null);
+    setEmployeeDocuments([]);
+    setSelectedEmployeeForRequest(null);
+    setShowDocumentRequestModal(false);
+  };
+
+  const handleRequestDocumentModal = (employee) => {
+    setSelectedEmployeeForRequest(employee);
+    setShowDocumentRequestModal(true);
+  };
+
+  const handleSpecificDocumentRequest = async (documentType) => {
+    if (!selectedEmployeeForRequest) return;
+    await requestDocument(selectedEmployeeForRequest.id, documentType);
+    setShowDocumentRequestModal(false);
+    setSelectedEmployeeForRequest(null);
+  };
+
+  const handleDownloadDocument = async (documentUrl, documentName) => {
+    if (!documentUrl) return;
+    try {
+      const { data, headers } = await axios.get(documentUrl, { responseType: 'blob' });
+      const blob = new Blob([data], { type: headers['content-type'] });
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      link.download = documentName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(link.href);
+    } catch (error) {
+      console.error('Download error:', error);
+      toast.error('Failed to download document.');
+    }
+  };
+
+  useEffect(() => {
+    fetchEmployeesData();
+    fetchRequestLogs();
+  }, []);
+
+  // Helpers
   const getAllDocumentTypes = () => [
     { id: 'aadhar', name: 'Aadhar Card', type: 'PDF' },
     { id: 'pan', name: 'PAN Card', type: 'PDF' },
@@ -164,10 +194,10 @@ const DocumentCollection = () => {
     { id: 'passport', name: 'Passport', type: 'PDF' }
   ];
 
-  const getEmptyDocumentsList = () => getAllDocumentTypes().map(docType => ({ ...docType, upload_date: 'N/A', url: null, status: 'not_uploaded' }));
+  const getEmptyDocumentsList = () => getAllDocumentTypes().map(doc => ({ ...doc, upload_date: 'N/A', url: null, status: 'not_uploaded' }));
 
   const getDocumentDisplayName = (docType) => {
-    const map = {
+    const displayMap = {
       aadhar: 'Aadhar Card',
       pan: 'PAN Card',
       latest_graduation_certificate: 'Graduation Certificate',
@@ -185,60 +215,15 @@ const DocumentCollection = () => {
       postgraduation_certificate: 'Post Graduation Certificate',
       passport: 'Passport',
     };
-    return map[docType] || docType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    return displayMap[docType] || docType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
   const getAvatarColor = (name) => {
-    const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-yellow-500', 'bg-red-500', 'bg-teal-500'];
-    const index = name.charCodeAt(0) % colors.length;
-    return colors[index];
+    const colors = ['bg-blue-500','bg-green-500','bg-purple-500','bg-pink-500','bg-indigo-500','bg-yellow-500','bg-red-500','bg-teal-500'];
+    return colors[name.charCodeAt(0) % colors.length];
   };
 
-  const getStatusBadge = (status) => {
-    const statusConfig = {
-      approved: { color: 'bg-green-100 text-green-800 border-green-200', icon: CheckCircle },
-      pending: { color: 'bg-yellow-100 text-yellow-800 border-yellow-200', icon: Clock },
-      rejected: { color: 'bg-red-100 text-red-800 border-red-200', icon: AlertCircle }
-    };
-    const config = statusConfig[status] || statusConfig.pending;
-    const IconComponent = config.icon;
-
-    return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${config.color}`}>
-        <IconComponent className="w-3 h-3 mr-1" />
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </span>
-    );
-  };
-
-  const handleDownloadDocument = async (documentUrl, documentName) => {
-    if (!documentUrl) return;
-
-    try {
-      const response = await api.get(documentUrl, { responseType: 'blob' });
-      const blob = new Blob([response.data]);
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.download = documentName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(link.href);
-      toast.success(`${documentName} downloaded successfully`);
-    } catch (error) {
-      console.error('Download error:', error);
-      toast.error('Failed to download document');
-    }
-  };
-
-  // ------------------ Initialization ------------------
-  useEffect(() => {
-    fetchEmployeesData();
-    fetchRequestLogs();
-  }, []);
-
-
-  return (
+return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">
         {/* Header */}
@@ -372,7 +357,7 @@ const DocumentCollection = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <button
-                        onClick={() => handleRequestDocument(employee.id)}
+                        onClick={() => handleRequestDocumentModal(employee.id)}
                         className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 border border-green-200 hover:from-green-200 hover:to-emerald-200 transition-all duration-200"
                       >
                         <Send className="w-3 h-3 mr-1" />

@@ -2,11 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Upload, FileText, CheckCircle, AlertCircle, X, ChevronDown, ChevronUp, Eye, Download, ArrowLeft } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { useUser } from '../../contexts/UserContext';
 import OnboardingHeader from './OnboardingHeader';
 import OnboardingFooter from './OnboardingFooter';
-import api from '@/lib/api';
+import  api  from '@/lib/api';
 
 export default function NewUserUploadDocs() {
   const navigate = useNavigate();
@@ -93,7 +92,7 @@ export default function NewUserUploadDocs() {
         console.error('Error fetching uploaded documents:', error);
         // Only show error toast if it's not a 404 (no data found)
         if (error.response?.status !== 404) {
-          toast.error('Failed to load existing documents');
+          console.error('Failed to load existing documents');
         }
       }
     };
@@ -416,7 +415,7 @@ export default function NewUserUploadDocs() {
 
     const employee_id = user?.employeeId || 0;
     if (!employee_id) {
-      toast.error('Employee ID not found. Please login again.');
+      console.error('Employee ID not found. Please login again.');
       return;
     }
 

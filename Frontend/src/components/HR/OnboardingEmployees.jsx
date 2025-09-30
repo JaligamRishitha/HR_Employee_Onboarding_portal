@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, Trash2, X, FileText, Download, Check, XCircle, User } from 'lucide-react';
-import { avatarBg } from '../../lib/avatarColors';
-import { markDeleted, filterListByDeleted } from '../../lib/localDelete';
-import { toast } from "react-toastify";
-import api from "@/lib/api";
+import Swal from 'sweetalert2';
+import { onboardingAPI } from '../../lib/api';
 
 const OnboardingEmployees = () => {
+  console.log("OnboardedEmployees component mounted");
   const [showDocumentsModal, setShowDocumentsModal] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
   const [employeeDocuments, setEmployeeDocuments] = useState([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [selectedDocuments, setSelectedDocuments] = useState([]);
@@ -18,27 +19,53 @@ const OnboardingEmployees = () => {
   const [employeeDetails, setEmployeeDetails] = useState(null);
   const [loadingEmployeeDetails, setLoadingEmployeeDetails] = useState(false);
 
+  // Avatar color generator
+  const getAvatarColor = (name) => {
+    const colors = [
+      'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500',
+      'bg-indigo-500', 'bg-red-500', 'bg-yellow-500', 'bg-teal-500'
+    ];
+    const index = name.charCodeAt(0) % colors.length;
+    return colors[index];
+  };
+
   useEffect(() => {
     fetchOnboardedEmployees();
   }, []);
 
-  // ✅ Fetch employees with doc count
+  // Fetch employees from /onboarding/all
   const fetchOnboardedEmployees = async () => {
     try {
       setLoading(true);
-      const { data } = await api.get("/onboarding/all");
-      if (data.status === "success") {
+      setError(null);
+
+      const result = await onboardingAPI.getAllOnboardingEmployees();
+      console.log(result);
+
+      if (result.status === 'success') {
+        // Fetch document count for each employee
         const employeesWithDocCount = await Promise.all(
-          data.data.map(async (employee) => {
-            const docResp = await api.get(`/onboarding/doc/${employee.id}`);
-            const docData = docResp.data;
-            const count = Object.entries(docData)
-              .filter(([key, value]) => key !== 'employeeId' && key !== 'uploaded_at' && value === true)
-              .length;
-            return { ...employee, document_count: count };
+          result.data.map(async (employee) => {
+            try {
+              const docData = await onboardingAPI.getEmployeeDocuments(employee.id);
+              console.log("Employees state:", employees);
+              console.log("Error state:", error);
+              
+              const docCount = Array.isArray(docData) ? docData.length : 0;
+              
+              return { 
+                ...employee, 
+                document_count: docCount,
+                status: employee.o_status === true ? 'Active' : employee.o_status === false ? 'Inactive' : 'Pending' 
+              };
+            } catch {
+              return { ...employee, document_count: 0, status: employee.o_status === true ? 'Active' : employee.o_status === false ? 'Inactive' : 'Pending' };
+            }
           })
         );
-        setEmployees(filterListByDeleted("onboardingEmployees", employeesWithDocCount));
+        setEmployees(employeesWithDocCount);
+      } else {
+        throw new Error('Failed to fetch employees');
       }
     } catch (err) {
       console.error("Error fetching onboarded employees:", err);
@@ -48,43 +75,27 @@ const OnboardingEmployees = () => {
     }
   };
 
-  // ✅ Fetch employee documents
+  // Fetch documents from /onboarding/emp/{employee_id}
   const fetchEmployeeDocuments = async (employeeId) => {
     try {
       setLoadingDocuments(true);
-      const { data } = await api.get(`/onboarding/doc/${employeeId}`);
+      console.log(`Fetching documents for employee ${employeeId}`);
+      
+      const documents = await onboardingAPI.getEmployeeDocuments(employeeId);
+      console.log('Received documents:', documents);
+      
+      // Transform the response to match UI expectations
+      const transformedDocs = documents.map((doc) => ({
+        id: doc.doc_type,
+        type: doc.doc_type,
+        name: formatDocumentName(doc.doc_type),
+        upload_date: doc.uploaded_at || 'N/A',
+        url: doc.file_url,
+        available: true
+      }));
 
-      const documentTypes = {
-        aadhar: 'Aadhar Card',
-        pan: 'PAN Card',
-        latest_graduation_certificate: 'Graduation Certificate',
-        updated_resume: 'Resume',
-        offer_letter: 'Offer Letter',
-        latest_compensation_letter: 'Compensation Letter',
-        experience_relieving_letter: 'Relieving Letter',
-        latest_3_months_payslips: 'Payslips (3 months)',
-        form16_or_12b_or_taxable_income: 'Form 16/12B/Tax Income',
-        ssc_certificate: 'SSC Certificate',
-        hsc_certificate: 'HSC Certificate',
-        hsc_marksheet: 'HSC Marksheet',
-        graduation_marksheet: 'Graduation Marksheet',
-        postgraduation_marksheet: 'Post Graduation Marksheet',
-        postgraduation_certificate: 'Post Graduation Certificate',
-        passport: 'Passport'
-      };
-
-      const documents = Object.entries(data)
-        .filter(([key, value]) => key !== "employeeId" && key !== "uploaded_at" && value === true)
-        .map(([key]) => ({
-          id: key,
-          type: documentTypes[key] || key,
-          name: documentTypes[key] || key,
-          upload_date: data.uploaded_at || "N/A",
-          url: `${import.meta.env.VITE_API_BASE_URL}/onboarding/doc/${employeeId}/${key}`,
-          available: true,
-        }));
-
-      setEmployeeDocuments(documents);
+      console.log('Transformed documents:', transformedDocs);
+      setEmployeeDocuments(transformedDocs);
     } catch (err) {
       console.error("Error fetching employee documents:", err);
       setEmployeeDocuments([]);
@@ -93,7 +104,28 @@ const OnboardingEmployees = () => {
     }
   };
 
-  const getAvatarColor = (name) => avatarBg(name);
+  // Format document type names
+  const formatDocumentName = (docType) => {
+    const nameMap = {
+      'aadhar': 'Aadhar Card',
+      'pan': 'PAN Card',
+      'latest_graduation_certificate': 'Graduation Certificate',
+      'updated_resume': 'Resume',
+      'offer_letter': 'Offer Letter',
+      'latest_compensation_letter': 'Compensation Letter',
+      'experience_relieving_letter': 'Relieving Letter',
+      'latest_3_months_payslips': 'Payslips (3 months)',
+      'form16_or_12b_or_taxable_income': 'Form 16/12B/Tax Income',
+      'ssc_certificate': 'SSC Certificate',
+      'hsc_certificate': 'HSC Certificate',
+      'hsc_marksheet': 'HSC Marksheet',
+      'graduation_marksheet': 'Graduation Marksheet',
+      'postgraduation_marksheet': 'Post Graduation Marksheet',
+      'postgraduation_certificate': 'Post Graduation Certificate',
+      'passport': 'Passport'
+    };
+    return nameMap[docType] || docType.replace(/_/g, ' ').toUpperCase();
+  };
 
   const getStatusBadge = (status) => {
     const statusStyles = {
@@ -124,11 +156,12 @@ const OnboardingEmployees = () => {
     await fetchEmployeeDetails(employee.id);
   };
 
+  // Fetch employee details from /onboarding/details/{employee_id}
   const fetchEmployeeDetails = async (employeeId) => {
     try {
       setLoadingEmployeeDetails(true);
-      const { data } = await api.get(`/onboarding/details/${employeeId}`);
-      setEmployeeDetails(data.data);
+      const result = await onboardingAPI.getEmployeeDetails(employeeId);
+      setEmployeeDetails(result.data);
     } catch (error) {
       console.error("Error fetching employee details:", error);
     } finally {
@@ -156,67 +189,65 @@ const OnboardingEmployees = () => {
     );
   };
 
-  // ✅ Approve All
+  // Approve all documents - POST /onboarding/hr/approve/{onboarding_id}
   const handleApproveAll = async () => {
-  try {
-    await api.post(`/onboarding/hr/approve/${selectedEmployee.id}`);
-    toast.success("All documents approved!");
-    handleCloseModal();
-    fetchOnboardedEmployees();
-  } catch (error) {
-    // Axios error handling
-    if (error.response) {
-      // Server returned an error response
-      toast.error(error.response.data?.message || "Failed to approve documents");
-    } else if (error.request) {
-      // Request made but no response
-      toast.error("No response from server. Please try again.");
-    } else {
-      // Something else caused the error
-      toast.error(error.message || "Failed to approve documents");
+    try {
+      const result = await onboardingAPI.approveEmployee(selectedEmployee.id);
+      Swal.fire('Success', result.message || 'All documents approved!', 'success');
+      handleCloseModal();
+      fetchOnboardedEmployees();
+    } catch (error) {
+      console.error('Error approving documents:', error);
+      Swal.fire('Error', 'Failed to approve documents', 'error');
     }
-    console.error("Approve documents error:", error);
-  }
-};
+  };
 
-
-  // ✅ Reject Selected
-  const handleRejectDocuments = async () => {
-  if (selectedDocuments.length === 0) {
-    toast.warn("Select at least one document");
-    return;
-  }
-
-  const reason = prompt("Enter rejection reason:");
-  if (!reason) return;
-
-  try {
-    await api.post(`/onboarding/hr/reject/${selectedEmployee.id}`, {
-      action: "Rejected",
-      document_types: selectedDocuments,
-      rejection_reason: reason,
+  // Reject Employee - DELETE /onboarding/hr/reject/{onboarding_id}
+  const handleRejectDocuments = async (employeeId) => {
+    Swal.fire({
+      title: "Reject Employee?",
+      text: "This will mark the employee as rejected.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, reject"
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          await onboardingAPI.rejectEmployee(employeeId);
+          setEmployees((prev) => prev.filter((e) => e.id !== employeeId));
+          handleCloseModal();
+          Swal.fire("Rejected!", "Employee has been moved to rejected list.", "success");
+        } catch (error) {
+          Swal.fire("Error!", error.message, "error");
+        }
+      }
     });
-    toast.success("Selected documents rejected!");
-    setSelectedDocuments([]);
-    setIsRejectMode(false);
-    fetchEmployeeDocuments(selectedEmployee.id);
-  } catch (error) {
-    // Axios error handling
-    if (error.response) {
-      // Server responded with a status other than 2xx
-      toast.error(error.response.data?.message || "Failed to reject documents");
-    } else if (error.request) {
-      // Request was made but no response received
-      toast.error("No response from server. Please try again.");
-    } else {
-      // Something else caused the error
-      toast.error(error.message || "Failed to reject documents");
-    }
-    console.error("Reject documents error:", error);
-  }
-};
+  };
 
-
+  // Delete Employee - DELETE /onboarding/hr/delete/{onboarding_id}
+  const handleDeleteEmployee = async (employeeId) => {
+    Swal.fire({
+      title: "Are you sure?",
+      text: "This will permanently delete the employee from the database!",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, delete it!"
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          await onboardingAPI.deleteEmployee(employeeId);
+          setEmployees((prev) => prev.filter((e) => e.id !== employeeId));
+          Swal.fire("Deleted!", "Employee has been permanently removed.", "success");
+        } catch (error) {
+          Swal.fire("Error!", error.message, "error");
+        }
+      }
+    });
+  };
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
@@ -270,14 +301,7 @@ const OnboardingEmployees = () => {
                   <td className="px-6 py-4 whitespace-nowrap flex items-center space-x-2">
                     <button onClick={() => handleViewEmployeeDetails(emp)} className="p-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-full transition-colors" title="View Employee Details"><User className="w-4 h-4" /></button>
                     <button
-                      onClick={() => {
-                        try {
-                          markDeleted('onboardingEmployees', emp.id);
-                        } catch (e) {
-                          console.error('Error marking employee deleted locally:', e);
-                        }
-                        setEmployees(prev => prev.filter(e => e.id !== emp.id));
-                      }}
+                      onClick={() => handleDeleteEmployee(emp.id)}
                       className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors"
                       title="Delete Employee"
                     >
@@ -307,67 +331,67 @@ const OnboardingEmployees = () => {
                 </div>
               ) : employeeDocuments.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
- {employeeDocuments.map((doc, index) => (
-  <div key={`${doc.id || doc.type}-${index}`} className="bg-white/70 backdrop-blur-sm border border-gray-200 rounded-xl p-4 shadow-md hover:shadow-lg transition-shadow">
-    <div className="flex items-start justify-between mb-3">
-      <div className="flex items-center">
-        {isRejectMode && (
-          <input
-            type="checkbox"
-            checked={selectedDocuments.includes(doc.id || doc.type)}
-            onChange={() => handleDocumentSelection(doc.id || doc.type)}
-            className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-          />
-        )}
-        <div className="w-10 h-10 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-lg flex items-center justify-center mr-3">
-          <span className="text-lg">📄</span>
-        </div>
-        <div>
-          <h4 className="font-medium text-gray-800 text-sm">{doc.name}</h4>
-          <p className="text-xs text-gray-500">Uploaded: {doc.upload_date}</p>
-        </div>
-      </div>
-    </div>
-    
-    <div className="mb-3">
-      <p className="text-sm text-gray-700 truncate" title={doc.name}>
-        {doc.type}
-      </p>
-    </div>
-    
-    <div className="flex items-center space-x-2">
-      <button
-        onClick={() => window.open(doc.url, '_blank')}
-        className="flex-1 inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
-      >
-        <Eye className="w-3 h-3 mr-1" />
-        View
-      </button>
-      <button
-        onClick={async () => {
-          try {
-            const response = await fetch(doc.url);
-            if (!response.ok) throw new Error('Failed to download file');
-            const blob = await response.blob();
-            const link = document.createElement('a');
-            link.href = window.URL.createObjectURL(blob);
-            link.download = doc.name;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-          } catch (error) {
-            console.error('Download error:', error);
-          }
-        }}
-        className="flex-1 inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-md hover:bg-green-100 transition-colors"
-      >
-        <Download className="w-3 h-3 mr-1" />
-        Download
-      </button>
-    </div>
-  </div>
-))}
-
+                  {employeeDocuments.map((doc, index) => (
+                    <div key={`${doc.id}-${index}`} className="bg-white/70 backdrop-blur-sm border border-gray-200 rounded-xl p-4 shadow-md hover:shadow-lg transition-shadow">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center">
+                          {isRejectMode && (
+                            <input
+                              type="checkbox"
+                              checked={selectedDocuments.includes(doc.id)}
+                              onChange={() => handleDocumentSelection(doc.id)}
+                              className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            />
+                          )}
+                          <div className="w-10 h-10 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-lg flex items-center justify-center mr-3">
+                            <span className="text-lg">📄</span>
+                          </div>
+                          <div>
+                            <h4 className="font-medium text-gray-800 text-sm">{doc.name}</h4>
+                            <p className="text-xs text-gray-500">Uploaded: {doc.upload_date}</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="mb-3">
+                        <p className="text-sm text-gray-700 truncate" title={doc.name}>
+                          {doc.type}
+                        </p>
+                      </div>
+                      
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => window.open(doc.url, '_blank')}
+                          className="flex-1 inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+                        >
+                          <Eye className="w-3 h-3 mr-1" />
+                          View
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const response = await fetch(doc.url);
+                              if (!response.ok) throw new Error('Failed to download file');
+                              const blob = await response.blob();
+                              const link = document.createElement('a');
+                              link.href = window.URL.createObjectURL(blob);
+                              link.download = doc.name;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            } catch (error) {
+                              console.error('Download error:', error);
+                              Swal.fire('Error', 'Failed to download file', 'error');
+                            }
+                          }}
+                          className="flex-1 inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-md hover:bg-green-100 transition-colors"
+                        >
+                          <Download className="w-3 h-3 mr-1" />
+                          Download
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div className="text-center py-8">
@@ -383,7 +407,8 @@ const OnboardingEmployees = () => {
               <div className="flex space-x-3">
                 <button onClick={handleApproveAll} className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors duration-200"><Check className="w-4 h-4 mr-2" />Approve All</button>
                 <button onClick={() => setIsRejectMode(!isRejectMode)} className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors duration-200">{isRejectMode ? 'Cancel' : 'Reject'}</button>
-                {isRejectMode && selectedDocuments.length > 0 && <button onClick={handleRejectDocuments} className="inline-flex items-center px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-800 transition-colors duration-200">Reject Selected ({selectedDocuments.length})</button>}
+                {isRejectMode && selectedDocuments.length > 0 && <button
+              onClick={() => handleRejectDocuments(selectedEmployee.id)} className="inline-flex items-center px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-800 transition-colors duration-200">Reject Selected ({selectedDocuments.length})</button>}
               </div>
               <button onClick={handleCloseModal} className="px-4 py-2 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors duration-200">Close</button>
             </div>

@@ -191,7 +191,7 @@ const EmployeePage = () => {
 
   // Date range picker component
   const DateRangePicker = () => (
-    <div className="flex items-center gap-2 bg-white rounded-lg border px-3 py-2">
+    <div className="flex items-center gap-2  rounded-lg border px-3 py-2">
       <Calendar className="h-4 w-4 text-gray-500" />
       <span className="text-sm text-gray-600">
         {format(dateRange.from, 'MMM dd')} - {format(dateRange.to, 'MMM dd, yyyy')}
@@ -210,15 +210,15 @@ const EmployeePage = () => {
         // Default dashboard content when no specific route is matched
         <div className="employee-dashboard-content">
           {/* Welcome Section */}
-          <div className="employee-welcome-banner">
+          <div className="employee-welcome-banner min-h-screen bg-gray-50 p-6">
             
             <p className="text-blue-500 ml-4 mb-4">Overview of your weekly attendance, leaves, and documents.</p>
-          </div>
+        
 
           {/* Analytics Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 ">
             {/* Weekly Attendance Chart */}
-            <div className="bg-white rounded-lg border p-6">
+            <div className="rounded-lg border p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-gray-900">Weekly Attendance</h3>
                 <DateRangePicker />
@@ -277,6 +277,7 @@ const EmployeePage = () => {
           </div>
 
           {/* Recent Activity removed as requested */}
+        </div>
         </div>
       )}
     </div>

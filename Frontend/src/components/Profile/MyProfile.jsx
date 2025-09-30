@@ -298,7 +298,7 @@ const fetchEmployeeProfile = async () => {
 
       </div>
 
-      {/* Refresh Button */}
+    
       <div className="mt-6 flex justify-center ">
         <Button onClick={fetchEmployeeProfile} variant="outline" className="mb-6">
           Refresh Profile
